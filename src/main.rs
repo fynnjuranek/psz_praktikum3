@@ -1,7 +1,7 @@
+use rand::Rng;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use rand::Rng;
 
 const LEVELS: usize = 4;
 const ELEVATORS: usize = 3;
@@ -10,6 +10,13 @@ const ELEVATORS: usize = 3;
 enum Direction {
     Up,
     Down,
+}
+
+enum DoorState {
+    Closed,
+    Closing,
+    Open,
+    Opening,
 }
 
 #[derive(Debug, Clone)]
@@ -80,7 +87,9 @@ struct PendingRequestQueue {
 
 impl PendingRequestQueue {
     fn new() -> Self {
-        Self { requests: Vec::new() }
+        Self {
+            requests: Vec::new(),
+        }
     }
 
     fn add_request(&mut self, passenger: Passenger) {
@@ -92,46 +101,12 @@ impl PendingRequestQueue {
     }
 }
 
-struct Door {
-    opening: bool,
-    open: bool,
-    closing: bool,
-    closed: bool,
-}
-
-impl Door {
-    fn new() -> Self {
-        Self {
-            opening: false,
-            open: false,
-            closing: false,
-            closed: true,
-        }
-    }
-
-    fn open_door(&mut self) {
-        self.opening = true;
-        self.closed = false; 
-        thread::sleep(Duration::from_millis(100));
-        self.opening = false;
-        self.open = true;
-    }
-
-    fn close_door(&mut self) {
-        self.closing = true;
-        self.open = false; 
-        thread::sleep(Duration::from_millis(100));
-        self.closing = false;
-        self.closed = true;
-    }
-}
-
 struct Elevator {
     id: usize,
     current_level: usize,
     passengers: Vec<Passenger>,
     direction: Option<Direction>,
-    door: Door,
+    door_state: DoorState,
     max_capacity: usize,
 }
 
@@ -142,9 +117,21 @@ impl Elevator {
             current_level: 0,
             passengers: Vec::new(),
             direction: Some(Direction::Up),
-            door: Door::new(),
+            door_state: DoorState::Closed,
             max_capacity: 2,
         }
+    }
+
+    fn close_door(&mut self) {
+        self.door_state = DoorState::Closing;
+        thread::sleep(Duration::from_millis(100));
+        self.door_state = DoorState::Closed;
+    }
+
+    fn open_door(&mut self) {
+        self.door_state = DoorState::Opening;
+        thread::sleep(Duration::from_millis(100));
+        self.door_state = DoorState::Open
     }
 
     fn move_and_handle_passengers(
@@ -154,8 +141,8 @@ impl Elevator {
     ) {
         loop {
             // Drop off passengers
-            self.door.open_door();
-            
+            self.open_door();
+
             self.passengers.retain_mut(|passenger: &mut Passenger| {
                 if passenger.destination == self.current_level {
                     println!(
@@ -180,7 +167,7 @@ impl Elevator {
                     "Elevator {}: Current Level {}. Currently {} passengers: {:?}\n   Level {} Queue: Up: {:?}, Down: {:?}",
                     self.id, self.current_level, self.passengers.len(), self.passengers, self.current_level, queue.up_queue, queue.down_queue
                 );
-                
+
                 while self.passengers.len() < self.max_capacity {
                     if let Some(mut passenger) = queue.get_passenger(direction) {
                         passenger.set_idle_on_level(false);
@@ -194,19 +181,24 @@ impl Elevator {
                         );
                         self.passengers.push(passenger);
                     } else {
-                        break
+                        break;
                     }
                     if self.passengers.len() == self.max_capacity {
                         println!(
                             "Elevator {} is full. Currently {} passengers: {:?}",
-                            self.id, self.passengers.len(), self.passengers
+                            self.id,
+                            self.passengers.len(),
+                            self.passengers
                         );
                     }
                 }
-                self.door.close_door();
+                self.close_door();
                 println!(
                     "Elevator {} @ level {}. Currently {} passengers: {:?}",
-                    self.id, self.current_level, self.passengers.len(), self.passengers
+                    self.id,
+                    self.current_level,
+                    self.passengers.len(),
+                    self.passengers
                 );
             }
 
@@ -221,20 +213,22 @@ impl Elevator {
 
                     // Move the elevator to the level the passenger is waiting at
                     self.move_to_level(&passenger);
-
                 } else {
                     println!("Elevator {}: No requests, idle.", self.id);
                     // Simulate wait time
                     thread::sleep(Duration::from_millis(1000));
                 }
             } else {
-              // Move the elevator if it's not idle
-              self.move_elevator();
+                // Move the elevator if it's not idle
+                self.move_elevator();
             }
 
             println!(
                 "Elevator {} @ level {}. Currently {} passengers: {:?}",
-                self.id, self.current_level, self.passengers.len(), self.passengers
+                self.id,
+                self.current_level,
+                self.passengers.len(),
+                self.passengers
             );
         }
     }
@@ -254,10 +248,7 @@ impl Elevator {
             }
             // Simulate travel time
             thread::sleep(Duration::from_millis(1000));
-            println!(
-                "Elevator {} moved to level {}",
-                self.id, self.current_level
-            );
+            println!("Elevator {} moved to level {}", self.id, self.current_level);
         }
         self.direction = Some(passenger.direction);
 
@@ -296,17 +287,16 @@ impl Elevator {
             }
             None => {}
         }
-        // Update the passenger levels after the elevator moves 
+        // Update the passenger levels after the elevator moves
         self.update_passenger_levels();
     }
 
-    // Method to update passengers' current level to match the elevator's current level 
-    fn update_passenger_levels(&mut self) { 
-        for passenger in self.passengers.iter_mut() { 
-            passenger.update_current_level(self.current_level); 
-        } 
+    // Method to update passengers' current level to match the elevator's current level
+    fn update_passenger_levels(&mut self) {
+        for passenger in self.passengers.iter_mut() {
+            passenger.update_current_level(self.current_level);
+        }
     }
-
 }
 
 fn spawn_passengers(
@@ -345,7 +335,10 @@ fn spawn_passengers(
             };
 
             thread::sleep(Duration::from_millis(rng.gen_range(100..1000)));
-            levels[level].lock().unwrap().add_passenger(passenger.clone()); // Clone here
+            levels[level]
+                .lock()
+                .unwrap()
+                .add_passenger(passenger.clone()); // Clone here
 
             println!(
                 "Passenger {} spawned at level {} going {:?} to level {}",
@@ -353,17 +346,28 @@ fn spawn_passengers(
             );
 
             // Add passenger to pending requests
-            pending_requests.lock().unwrap().add_request(passenger.clone()); // Clone here
+            pending_requests
+                .lock()
+                .unwrap()
+                .add_request(passenger.clone()); // Clone here
         }
     });
 }
 
 fn main() {
-    let levels = Arc::new((0..LEVELS).map(|_| Mutex::new(LevelQueue::new())).collect::<Vec<_>>());
+    let levels = Arc::new(
+        (0..LEVELS)
+            .map(|_| Mutex::new(LevelQueue::new()))
+            .collect::<Vec<_>>(),
+    );
     let pending_requests = Arc::new(Mutex::new(PendingRequestQueue::new()));
 
     let passenger_count = 30;
-    spawn_passengers(Arc::clone(&levels), Arc::clone(&pending_requests), passenger_count);
+    spawn_passengers(
+        Arc::clone(&levels),
+        Arc::clone(&pending_requests),
+        passenger_count,
+    );
 
     let mut threads: Vec<thread::JoinHandle<()>> = vec![];
 
