@@ -20,14 +20,19 @@ enum DoorState {
 }
 
 #[derive(Debug, Clone)]
+enum PassengerState {
+    Idle,
+    InElevator,
+    EnteringElevator,
+    ExitingElevator,
+}
+
+#[derive(Debug, Clone)]
 struct Passenger {
     id: usize,
     direction: Direction,
     destination: usize,
-    idle_on_level: bool,
-    entering_elevator: bool,
-    in_elevator: bool,
-    leaving_elevator: bool,
+    passenger_state: PassengerState,
     current_level: usize,
 }
 
@@ -36,20 +41,21 @@ impl Passenger {
         self.current_level = new_level;
     }
 
-    fn set_idle_on_level(&mut self, idle: bool) {
-        self.idle_on_level = idle;
+    fn enter_elevator(&mut self) {
+        self.passenger_state = PassengerState::EnteringElevator;
+        thread::sleep(Duration::from_micros(100));
+        self.passenger_state = PassengerState::InElevator;
     }
 
-    fn set_entering_elevator(&mut self, entering: bool) {
-        self.entering_elevator = entering;
+    fn wait_for_elevator(&mut self) {
+        self.passenger_state = PassengerState::Idle;
     }
 
-    fn set_in_elevator(&mut self, in_elevator: bool) {
-        self.in_elevator = in_elevator;
-    }
-
-    fn set_leaving_elevator(&mut self, leaving: bool) {
-        self.leaving_elevator = leaving;
+    fn exit_elevator(&mut self) {
+        self.passenger_state = PassengerState::ExitingElevator;
+        thread::sleep(Duration::from_micros(100));
+        // When not in elevator just be idle on floor
+        self.passenger_state = PassengerState::Idle;
     }
 }
 
@@ -151,9 +157,7 @@ impl Elevator {
                     );
                     false
                 } else {
-                    passenger.set_leaving_elevator(true);
-                    passenger.set_in_elevator(false);
-                    passenger.set_leaving_elevator(false);
+                    passenger.exit_elevator();
                     true
                 }
             });
@@ -170,11 +174,7 @@ impl Elevator {
 
                 while self.passengers.len() < self.max_capacity {
                     if let Some(mut passenger) = queue.get_passenger(direction) {
-                        passenger.set_idle_on_level(false);
-                        passenger.set_entering_elevator(true);
-                        passenger.set_in_elevator(true);
-                        passenger.set_entering_elevator(false);
-
+                        passenger.enter_elevator();
                         println!(
                             "Elevator {}: Passenger {} picked up at level {} going {:?} to level {}",
                             self.id, passenger.id, self.current_level, passenger.direction, passenger.destination
@@ -323,16 +323,16 @@ fn spawn_passengers(
                 Direction::Down => rng.gen_range(0..level),
             };
 
-            let passenger = Passenger {
+            let mut passenger = Passenger {
                 id,
                 direction,
                 destination,
-                idle_on_level: true,
-                entering_elevator: false,
-                in_elevator: false,
-                leaving_elevator: false,
+                passenger_state: PassengerState::Idle,
                 current_level: level,
             };
+
+            // after intialization of passenger, he waits for elevator on the floor.
+            passenger.wait_for_elevator();
 
             thread::sleep(Duration::from_millis(rng.gen_range(100..1000)));
             levels[level]
