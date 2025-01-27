@@ -4,9 +4,9 @@ use std::{
     time::Duration,
 };
 
-use elevator::elevator::{Direction, Elevator};
-use passenger::passenger::Passenger;
-use queues::queues::{LevelQueue, PendingRequestQueue};
+use elevator::{Direction, Elevator};
+use passenger::Passenger;
+use queues::{LevelQueue, PendingRequestQueue};
 
 use rand::Rng;
 
